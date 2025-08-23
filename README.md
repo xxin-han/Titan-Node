@@ -61,16 +61,16 @@ pm2 logs acc1
 
 ## ⚡ Start / Restart / Stop / Delete
 
-Start one account:
+- Start one account:
 pm2 start acc1/index.js --name acc1
 
-Restart one account:
+- Restart one account:
 pm2 restart acc3
 
-Stop one account:
+- Stop one account:
 pm2 stop acc5
 
-Remove one account from PM2:
+- Remove one account from PM2:
 pm2 delete acc7
 ```
    
