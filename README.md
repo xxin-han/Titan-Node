@@ -46,7 +46,7 @@
    ```
    or
    ```bash
-   pm2 start index.js --name node1
+   pm2 start index.js --name acc
    ```
    
 9. Stop bot
