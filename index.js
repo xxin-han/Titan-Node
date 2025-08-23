@@ -30,39 +30,35 @@ const logger = {
     step: (msg) => console.log(`${colors.white}[➤] ${msg}${colors.reset}`),
     point: (msg) => console.log(`${colors.white}[💰] ${msg}${colors.reset}`),
     proxy: (msg) => console.log(`${colors.yellow}[🌐] ${msg}${colors.reset}`),
-    banner: (deviceId = null, proxyCount = 0, tokenStatus = 'waiting...') => {
+    
+    banner: () => {
         console.log(`${colors.magenta}${colors.bold}`);
-        console.log(`================================================`);
-        console.log(`       🚀 xXin98's Titan Node Auto Bot 🚀       `);
-        console.log(`================================================${colors.reset}`);
-
-        console.log(`${colors.cyan}✨ Features:`);
-        console.log(`  - Full Automation (24/7 TNTIP collection)`);
-        console.log(`  - Proxy Support: ${proxyCount} proxies detected`);
-        console.log(`  - Secure Token Management`);
-        console.log(`  - Random User-Agent per connection`);
-        console.log(`  - Auto WebSocket reconnect`);
-        console.log(`${colors.reset}`);
-
-        if (deviceId) {
-            console.log(`${colors.yellow}🆔 Device ID: ${deviceId}${colors.reset}`);
-        }
-
-        console.log(`${colors.green}===============================================${colors.reset}`);
-        console.log(`${colors.blue}[i] Refresh Token Status: ${tokenStatus}${colors.reset}`);
-        console.log(`${colors.blue}[i] Bot is starting... Please wait.${colors.reset}`);
+        console.log(`=============================================`)
+        console.log(`        xXin98's Titan Node Auto Bot         `)
+        console.log(`=============================================${colors.reset}`)
         console.log();
+        console.log(`${colors.blue}✨ Features:`)
+        console.log(`- Full Automation: Run 24/7 and collect TNTIP automatically`)
+        console.log(`- Proxy Support: Use multiple proxies per bot`)
+        console.log(`- Secure Token Management`)
+        console.log(`- Random User-Agent for each connection`)
+        console.log(`${colors.reset}`);
     },
 };
 
+/**
+ * 
+ * @returns {string[]} 
+ */
 function readProxies() {
     const proxyFilePath = path.join(__dirname, 'proxies.txt');
     try {
         if (fs.existsSync(proxyFilePath)) {
-            return fs.readFileSync(proxyFilePath, 'utf-8')
+            const proxies = fs.readFileSync(proxyFilePath, 'utf-8')
                 .split('\n')
                 .map(p => p.trim())
                 .filter(p => p);
+            return proxies;
         }
     } catch (error) {
         logger.error(`Error reading proxies.txt: ${error.message}`);
@@ -77,6 +73,7 @@ class TitanNode {
         this.accessToken = null;
         this.userId = null;
         this.deviceId = uuidv4(); 
+
         const agent = this.proxy ? new HttpsProxyAgent(this.proxy) : null;
 
         this.api = axios.create({
@@ -106,7 +103,6 @@ class TitanNode {
                 this.userId = response.data.data.user_id;
                 this.api.defaults.headers.common['Authorization'] = `Bearer ${this.accessToken}`;
                 logger.success('Access token refreshed successfully!');
-                logger.banner(this.deviceId, readProxies().length, '✅ Token refreshed');
                 return true;
             } else {
                 logger.error(`Failed to refresh token: ${response.data.msg || 'Unknown error'}`);
@@ -144,6 +140,7 @@ class TitanNode {
     connectWebSocket() {
         logger.loading('Connecting to WebSocket...');
         const wsUrl = `wss://task.titannet.info/api/public/webnodes/ws?token=${this.accessToken}&device_id=${this.deviceId}`;
+        
         const agent = this.proxy ? new HttpsProxyAgent(this.proxy) : null;
 
         this.ws = new WebSocket(wsUrl, {
@@ -191,7 +188,7 @@ class TitanNode {
     }
 
     async start() {
-        logger.banner(this.deviceId, readProxies().length, 'checking...');
+        logger.banner();
         if (this.proxy) {
             logger.proxy(`Using Proxy: ${this.proxy}`);
         } else {
@@ -221,10 +218,11 @@ function main() {
     if (proxies.length > 0) {
         logger.info(`Found ${proxies.length} proxies. Starting a bot for each one.`);
         proxies.forEach((proxy, index) => {
+            
             setTimeout(() => {
                 const bot = new TitanNode(refreshToken, proxy);
                 bot.start();
-            }, index * 10000);
+            }, index * 10000); 
         });
     } else {
         logger.info('No proxies found in proxies.txt. Running in direct mode.');
