@@ -31,6 +31,11 @@
    ```bash
    nano .env
    ```
+  - Format .env 
+   ```bash
+   REFRESH_TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+   ```
+
 7. Fill proxy list on proxy.txt if you using a proxy then save it ctrl + x + y + enter
    ```bash
    nano proxies.txt
