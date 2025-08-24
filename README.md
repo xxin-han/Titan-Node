@@ -46,7 +46,7 @@
    ```
    or
    ```bash
-   pm2 start index.js --name ewe
+   pm2 start index.js --name a
    ```
    
 9. Stop bot
@@ -67,7 +67,7 @@ pm2 logs acc1
 ## ⚡ Start / Restart / Stop / Delete
 
 - Start one account:
-pm2 start acc1/index.js --name a
+pm2 start acc1/index.js --name acc1
 
 - Restart one account:
 pm2 restart acc3
