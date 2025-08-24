@@ -46,7 +46,7 @@
    ```
    or
    ```bash
-   pm2 start index.js --name a
+   pm2 start index.js --name b
    ```
    
 9. Stop bot
