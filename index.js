@@ -18,6 +18,7 @@ const colors = {
     red: "\x1b[31m",
     white: "\x1b[37m",
     bold: "\x1b[1m",
+    magenta: "\x1b[35m",
 };
 
 const logger = {
@@ -33,7 +34,7 @@ const logger = {
     banner: () => {
         console.log(`${colors.cyan}${colors.bold}`);
         console.log(`---------------------------------------------`);
-        console.log(`   Titan Node Auto Bot - V2  `);
+        console.log(`   Titan Node Auto Bot - by. xXin98  `);
         console.log(`---------------------------------------------${colors.reset}`);
         console.log();
     },
@@ -125,81 +126,71 @@ class TitanNode {
         }
     }
 
-    // 🧠 Versi connectWebSocket baru — reconnect cepat & log reconnect
+    // ⚙️ Versi gabungan — Reconnect cepat + aman
     connectWebSocket() {
         logger.loading('Connecting to WebSocket...');
-
         const wsUrl = `wss://task.titannet.info/api/public/webnodes/ws?token=${this.accessToken}&device_id=${this.deviceId}`;
         const agent = this.proxy ? new HttpsProxyAgent(this.proxy) : null;
 
-        let reconnectDelay = 5000; // mulai 5 detik
-        let isReconnecting = false;
+        this.ws = new WebSocket(wsUrl, {
+            agent: agent,
+            headers: { 'User-Agent': this.api.defaults.headers['User-Agent'] },
+        });
 
-        const connect = () => {
-            this.ws = new WebSocket(wsUrl, {
-                agent: agent,
-                headers: { 'User-Agent': this.api.defaults.headers['User-Agent'] },
-            });
-
-            this.ws.on('open', () => {
-                logger.success('WebSocket connection established ✅');
-                reconnectDelay = 5000; // reset delay
-                isReconnecting = false;
-
-                this.pingInterval = setInterval(() => {
-                    if (this.ws.readyState === WebSocket.OPEN) {
-                        const echoMessage = JSON.stringify({
-                            cmd: 1,
-                            echo: "echo me",
-                            jobReport: { cfgcnt: 2, jobcnt: 0 }
-                        });
-                        this.ws.send(echoMessage);
-                    }
-                }, 30 * 1000);
-            });
-
-            this.ws.on('message', (data) => {
-                try {
-                    const message = JSON.parse(data);
-                    if (message.cmd === 1) {
-                        const response = { cmd: 2, echo: message.echo };
-                        this.ws.send(JSON.stringify(response));
-                    }
-                    if (message.userDataUpdate) {
-                        logger.point(`Points Update - Today: ${message.userDataUpdate.today_points}, Total: ${message.userDataUpdate.total_points}`);
-                    }
-                } catch {
-                    logger.warn(`Could not parse message: ${data}`);
+        this.ws.on('open', () => {
+            logger.success('WebSocket connection established ✅');
+            clearInterval(this.pingInterval);
+            this.pingInterval = setInterval(() => {
+                if (this.ws.readyState === WebSocket.OPEN) {
+                    const echoMessage = JSON.stringify({
+                        cmd: 1,
+                        echo: "echo me",
+                        jobReport: { cfgcnt: 2, jobcnt: 0 }
+                    });
+                    this.ws.send(echoMessage);
                 }
-            });
+            }, 30 * 1000);
+        });
 
-            this.ws.on('error', (error) => {
-                logger.error(`WebSocket error: ${error.message}`);
-                this.ws.close();
-            });
+        this.ws.on('message', (data) => {
+            try {
+                const message = JSON.parse(data);
+                if (message.cmd === 1) {
+                    const response = { cmd: 2, echo: message.echo };
+                    this.ws.send(JSON.stringify(response));
+                }
+                if (message.userDataUpdate) {
+                    logger.point(`Points Update - Today: ${message.userDataUpdate.today_points}, Total: ${message.userDataUpdate.total_points}`);
+                }
+            } catch {
+                logger.warn(`Could not parse message: ${data}`);
+            }
+        });
 
-            this.ws.on('close', () => {
-                if (isReconnecting) return; // cegah reconnect ganda
-                isReconnecting = true;
+        this.ws.on('error', (error) => {
+            logger.error(`WebSocket error: ${error.message}`);
+            this.ws.close();
+        });
 
-                clearInterval(this.pingInterval);
-                logger.reconnect(`WebSocket closed. Reconnecting in ${reconnectDelay / 1000}s...`);
+        // 🧰 Reconnect cepat & aman
+        this.ws.on('close', async () => {
+            clearInterval(this.pingInterval);
+            logger.warn('WebSocket closed. Trying fast reconnect...');
 
-                setTimeout(async () => {
-                    const refreshed = await this.refreshAccessToken();
-                    if (refreshed) {
-                        logger.reconnect('Reconnecting now...');
-                        this.connectWebSocket();
-                    } else {
-                        logger.error('Token refresh failed. Retrying reconnect...');
-                        this.connectWebSocket();
-                    }
-                    reconnectDelay = Math.min(reconnectDelay * 2, 60000); // max 60 detik
-                }, reconnectDelay);
-            });
-        };
+            for (let delay = 5; delay <= 60; delay *= 2) {
+                logger.reconnect(`Reconnecting in ${delay}s...`);
+                await new Promise(r => setTimeout(r, delay * 1000));
+                const refreshed = await this.refreshAccessToken();
+                if (refreshed) {
+                    logger.reconnect('Reconnected successfully.');
+                    this.connectWebSocket();
+                    return;
+                }
+            }
 
-        connect(); // mulai koneksi pertama kali
+            logger.error('⚠️ All reconnect attempts failed. Restarting bot...');
+            this.start(); // fallback terakhir
+        });
     }
 
     async start() {
