@@ -9,6 +9,7 @@ const randomUseragent = require('random-useragent');
 
 const refreshToken = process.env.REFRESH_TOKEN;
 
+// 🎨 Logger warna-warni
 const colors = {
     reset: "\x1b[0m",
     cyan: "\x1b[36m",
@@ -17,8 +18,6 @@ const colors = {
     red: "\x1b[31m",
     white: "\x1b[37m",
     bold: "\x1b[1m",
-    blue: "\x1b[34m",
-    magenta: "\x1b[35m",
 };
 
 const logger = {
@@ -30,26 +29,17 @@ const logger = {
     step: (msg) => console.log(`${colors.white}[➤] ${msg}${colors.reset}`),
     point: (msg) => console.log(`${colors.white}[💰] ${msg}${colors.reset}`),
     proxy: (msg) => console.log(`${colors.yellow}[🌐] ${msg}${colors.reset}`),
-    
+    reconnect: (msg) => console.log(`${colors.magenta}[🔁] ${msg}${colors.reset}`),
     banner: () => {
-        console.log(`${colors.magenta}${colors.bold}`);
-        console.log(`=============================================`)
-        console.log(`        xXin98's Titan Node Auto Bot         `)
-        console.log(`=============================================${colors.reset}`)
+        console.log(`${colors.cyan}${colors.bold}`);
+        console.log(`---------------------------------------------`);
+        console.log(`   Titan Node Auto Bot - V2  `);
+        console.log(`---------------------------------------------${colors.reset}`);
         console.log();
-        console.log(`${colors.blue}✨ Features:`)
-        console.log(`- Full Automation: Run 24/7 and collect TNTIP automatically`)
-        console.log(`- Proxy Support: Use multiple proxies per bot`)
-        console.log(`- Secure Token Management`)
-        console.log(`- Random User-Agent for each connection`)
-        console.log(`${colors.reset}`);
     },
 };
 
-/**
- * 
- * @returns {string[]} 
- */
+// 🔍 Membaca proxy dari file proxies.txt
 function readProxies() {
     const proxyFilePath = path.join(__dirname, 'proxies.txt');
     try {
@@ -72,12 +62,14 @@ class TitanNode {
         this.proxy = proxy;
         this.accessToken = null;
         this.userId = null;
-        this.deviceId = uuidv4(); 
+        this.deviceId = uuidv4();
+        this.ws = null;
+        this.pingInterval = null;
 
         const agent = this.proxy ? new HttpsProxyAgent(this.proxy) : null;
 
         this.api = axios.create({
-            httpsAgent: agent, 
+            httpsAgent: agent,
             headers: {
                 'Accept': '*/*',
                 'Accept-Language': 'en-US,en;q=0.9',
@@ -85,10 +77,6 @@ class TitanNode {
                 'User-Agent': randomUseragent.getRandom(),
             }
         });
-
-        this.ws = null;
-        this.reconnectInterval = 1000 * 60 * 5; 
-        this.pingInterval = null;
     }
 
     async refreshAccessToken() {
@@ -137,54 +125,81 @@ class TitanNode {
         }
     }
 
+    // 🧠 Versi connectWebSocket baru — reconnect cepat & log reconnect
     connectWebSocket() {
         logger.loading('Connecting to WebSocket...');
+
         const wsUrl = `wss://task.titannet.info/api/public/webnodes/ws?token=${this.accessToken}&device_id=${this.deviceId}`;
-        
         const agent = this.proxy ? new HttpsProxyAgent(this.proxy) : null;
 
-        this.ws = new WebSocket(wsUrl, {
-            agent: agent,
-            headers: {
-                'User-Agent': this.api.defaults.headers['User-Agent'],
-            }
-        });
+        let reconnectDelay = 5000; // mulai 5 detik
+        let isReconnecting = false;
 
-        this.ws.on('open', () => {
-            logger.success('WebSocket connection established. Waiting for jobs...');
-            this.pingInterval = setInterval(() => {
-                if (this.ws.readyState === WebSocket.OPEN) {
-                    const echoMessage = JSON.stringify({ cmd: 1, echo: "echo me", jobReport: { cfgcnt: 2, jobcnt: 0 } });
-                    this.ws.send(echoMessage);
+        const connect = () => {
+            this.ws = new WebSocket(wsUrl, {
+                agent: agent,
+                headers: { 'User-Agent': this.api.defaults.headers['User-Agent'] },
+            });
+
+            this.ws.on('open', () => {
+                logger.success('WebSocket connection established ✅');
+                reconnectDelay = 5000; // reset delay
+                isReconnecting = false;
+
+                this.pingInterval = setInterval(() => {
+                    if (this.ws.readyState === WebSocket.OPEN) {
+                        const echoMessage = JSON.stringify({
+                            cmd: 1,
+                            echo: "echo me",
+                            jobReport: { cfgcnt: 2, jobcnt: 0 }
+                        });
+                        this.ws.send(echoMessage);
+                    }
+                }, 30 * 1000);
+            });
+
+            this.ws.on('message', (data) => {
+                try {
+                    const message = JSON.parse(data);
+                    if (message.cmd === 1) {
+                        const response = { cmd: 2, echo: message.echo };
+                        this.ws.send(JSON.stringify(response));
+                    }
+                    if (message.userDataUpdate) {
+                        logger.point(`Points Update - Today: ${message.userDataUpdate.today_points}, Total: ${message.userDataUpdate.total_points}`);
+                    }
+                } catch {
+                    logger.warn(`Could not parse message: ${data}`);
                 }
-            }, 30 * 1000);
-        });
+            });
 
-        this.ws.on('message', (data) => {
-            try {
-                const message = JSON.parse(data);
-                if (message.cmd === 1) {
-                    const response = { cmd: 2, echo: message.echo };
-                    this.ws.send(JSON.stringify(response));
-                }
-                if (message.userDataUpdate) {
-                    logger.point(`Points Update - Today: ${message.userDataUpdate.today_points}, Total: ${message.userDataUpdate.total_points}`);
-                }
-            } catch (error) {
-                logger.warn(`Could not parse message: ${data}`);
-            }
-        });
+            this.ws.on('error', (error) => {
+                logger.error(`WebSocket error: ${error.message}`);
+                this.ws.close();
+            });
 
-        this.ws.on('error', (error) => {
-            logger.error(`WebSocket error: ${error.message}`);
-            this.ws.close();
-        });
+            this.ws.on('close', () => {
+                if (isReconnecting) return; // cegah reconnect ganda
+                isReconnecting = true;
 
-        this.ws.on('close', () => {
-            logger.warn('WebSocket connection closed. Attempting to reconnect...');
-            clearInterval(this.pingInterval);
-            setTimeout(() => this.start(), this.reconnectInterval);
-        });
+                clearInterval(this.pingInterval);
+                logger.reconnect(`WebSocket closed. Reconnecting in ${reconnectDelay / 1000}s...`);
+
+                setTimeout(async () => {
+                    const refreshed = await this.refreshAccessToken();
+                    if (refreshed) {
+                        logger.reconnect('Reconnecting now...');
+                        this.connectWebSocket();
+                    } else {
+                        logger.error('Token refresh failed. Retrying reconnect...');
+                        this.connectWebSocket();
+                    }
+                    reconnectDelay = Math.min(reconnectDelay * 2, 60000); // max 60 detik
+                }, reconnectDelay);
+            });
+        };
+
+        connect(); // mulai koneksi pertama kali
     }
 
     async start() {
@@ -195,7 +210,7 @@ class TitanNode {
             logger.proxy('Running in Direct Mode (No Proxy)');
         }
         logger.step(`Using Device ID: ${this.deviceId}`);
-        
+
         const tokenRefreshed = await this.refreshAccessToken();
         if (tokenRefreshed) {
             await this.registerNode();
@@ -206,6 +221,7 @@ class TitanNode {
     }
 }
 
+// 🚀 Main function
 function main() {
     if (!refreshToken) {
         logger.error('Error: REFRESH_TOKEN is not set in the .env file.');
@@ -218,11 +234,10 @@ function main() {
     if (proxies.length > 0) {
         logger.info(`Found ${proxies.length} proxies. Starting a bot for each one.`);
         proxies.forEach((proxy, index) => {
-            
             setTimeout(() => {
                 const bot = new TitanNode(refreshToken, proxy);
                 bot.start();
-            }, index * 10000); 
+            }, index * 10000);
         });
     } else {
         logger.info('No proxies found in proxies.txt. Running in direct mode.');
